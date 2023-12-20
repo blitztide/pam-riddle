@@ -3,8 +3,13 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <sys/random.h>
+
+#define PAM_SM_AUTH
+#define PAM_SM_ACCOUNT
+
 #include <security/pam_modules.h>
 #include <security/pam_ext.h>
+
 
 #define MAX_INPUT 256
 #define MAX_ATTEMPTS 3
@@ -87,7 +92,7 @@ struct Riddle_t *get_riddle()
 
 #ifndef TEST
 // Actual Code that checks the authentication
-int pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, const char **argv)
+PAM_EXTERN int pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, const char **argv)
 {
 	int found = 0;
 	char *buffer = 0;
@@ -95,7 +100,7 @@ int pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, const char **ar
 	pam_info(pamh,"Please answer the following riddle.");
 	riddle = get_riddle();
 	if (riddle == 0) {
-		pam_info(pamh,"ERROR GETTING RIDDLE\n");
+		pam_info(pamh,"ERROR GETTING RIDDLE");
 		return PAM_AUTH_ERR;
 	}
 	
@@ -103,18 +108,21 @@ int pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, const char **ar
 	pam_prompt(pamh, PAM_PROMPT_ECHO_ON, &buffer, "");
 	found = strcmp(buffer,riddle->Answer);
 	if(found == 0) {
-		pam_info(pamh,"Correct!\n");
+		pam_info(pamh,"Correct!");
 		return PAM_SUCCESS;
 	}
+
+	// Clean up riddle memory
+	free(riddle);
 	return PAM_AUTH_ERR;
 }
 
-int pam_sm_setcred(pam_handle_t *pamh, int flags, int argc, const char **argv)
+PAM_EXTERN int pam_sm_setcred(pam_handle_t *pamh, int flags, int argc, const char **argv)
 {
 	return PAM_IGNORE;
 }
 
-int pam_sm_acct_mgmt(pam_handle_t *pamh, int flags, int argc, const char **argv)
+PAM_EXTERN int pam_sm_acct_mgmt(pam_handle_t *pamh, int flags, int argc, const char **argv)
 {
 	return PAM_SUCCESS;
 }
@@ -124,6 +132,7 @@ int pam_sm_acct_mgmt(pam_handle_t *pamh, int flags, int argc, const char **argv)
 int main(int argc, char **argv)
 {
 	int found = 0;
+	int length = 0;
 	int attempts = 0;
 	char buffer[MAX_INPUT] = {0};
 	struct Riddle_t *riddle;
@@ -134,13 +143,20 @@ int main(int argc, char **argv)
 		exit(-1);
 	}
 	printf("Got Riddle\n");
+	
+	// Get length of Answer
+	length = strlen(riddle->Answer);
 
 	// Loop attempts
 	for(int attempts = 0; attempts < MAX_ATTEMPTS; attempts++) {
 		printf("%s\n",riddle->Riddle);
 		if(fgets(buffer, MAX_INPUT, stdin) == 0) {
-			pam_info(pamh,"ERROR READING INPUT\n");
+			printf("ERROR READING INPUT\n");
 			return PAM_AUTH_ERR;
+		}
+		if ( strncmp(buffer,riddle->Answer, length -1) == 0 ) {
+			found = 1;
+			break;
 		}
 	}
 	if(found) {
